@@ -7,6 +7,8 @@ const main = async () => {
 		console.log('file not found: ' + path);
 		process.exit();
 	}
+	console.log(findString)
+	console.log(replaceString)
 
 	const envText = 'export const env: Env';
 	const allFileContents = fs.readFileSync(path, 'utf-8');
@@ -31,3 +33,6 @@ const main = async () => {
 };
 
 main();
+
+
+// cd mj-mobile-ios-build && node /Users/user/mj-utility/replaceTringInFile.js --path='/Users/user/.jenkins/workspace/mj-mobile-ios/mj-mobile-ios-build/app/config/index.ts'  --findString='productionEndpoint' --replaceString='${server}'
