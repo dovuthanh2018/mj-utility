@@ -39,6 +39,7 @@ const main = async () => {
 					}
 					const index = line.indexOf(item);
 					line[index] = arrayString.join('=');
+					console.log(line[index]);
 				}
 			});
 			fs.writeFileSync(path, line.join("\r\n"));
