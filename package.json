@@ -17,6 +17,7 @@
   },
   "homepage": "https://github.com/dovuthanh2018/mj-utility#readme",
   "dependencies": {
+    "app-store-scraper": "^0.18.0",
     "fs": "^0.0.1-security",
     "minimist": "^1.2.8"
   }
