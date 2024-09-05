@@ -1,0 +1,148 @@
+
+def VERSION_NAME= ''
+def date = new Date()
+def VERSION_CODE = date.format('yyyyMMddHHmm',TimeZone.getTimeZone('PST')) as String
+def skipRemainingStages = false
+def currentTime = new Date().getTime()/1000 - 1440 as Integer
+def lastTimeComit = currentTime
+
+pipeline {
+
+    agent any
+
+    tools { nodejs "node" }
+
+
+    /** Checkout
+    * Get source code from SVN, Git,...
+    */
+    stages {
+        stage('Checkout') {
+            steps {
+              sh '''
+              rm -rf mj-mobile-ios-build
+              git clone git@github.com:Mighty-Jaxx-International-Pte-Ltd/mj-mobile.git -b ${branch} mj-mobile-ios-build
+              '''
+            }
+        }
+
+        stage('install dependencies'){
+            steps {
+                 sh '''
+                pwd
+                cd mj-mobile-ios-build
+                /Users/user/.nvm/versions/node/v16.20.1/bin/yarn install
+                '''
+
+                script {
+                    // inline
+                    lastComit = sh script: 'cd mj-mobile-ios-build && git show -s --format=%ct', returnStdout: true
+                    echo "lastComit: ${lastComit}"
+                    lastTimeComit = lastComit as Integer
+                    if(lastTimeComit < currentTime && !force){
+                        skipRemainingStages = true
+                    }
+                }
+            }
+        }
+
+        stage('update server config'){
+            when {
+                expression {
+                    !skipRemainingStages
+                }
+            }
+            steps {
+
+                script {
+                    // inline
+                    sh script: "cd mj-mobile-ios-build && node /Users/user/mj-utility/replaceTringInFile.js --path='/Users/user/.jenkins/workspace/mj-mobile-ios/mj-mobile-ios-build/app/config/index.ts' --endpoint='${server}' --env='${env}'", returnStdout: true
+                }
+            }
+        }
+
+        stage('correct build version'){
+            when {
+                expression {
+                    !skipRemainingStages
+                }
+            }
+            steps {
+
+                script {
+                    // inline
+                    sh script: "cd mj-mobile-ios-build && node /Users/user/mj-utility/correctIosBuildVersion.js --path='/Users/user/.jenkins/workspace/mj-mobile-ios/mj-mobile-ios-build/ios/mrporter.xcodeproj/project.pbxproj'", returnStdout: true
+                }
+            }
+        }
+
+
+        stage('compile') {
+            when {
+                expression {
+                    !skipRemainingStages
+                }
+            }
+
+            steps {
+
+                script {
+                    // inline
+                    sh script: "cd mj-mobile-ios-build/ios && /usr/libexec/PlistBuddy -c 'Set :CFBundleVersion ${VERSION_CODE}' 'mrporter/Info.plist'", returnStdout: true
+                }
+
+		        sh '''
+                pwd
+                cd mj-mobile-ios-build/ios
+                export LANG=en_US.UTF-8
+                export LANGUAGE=en_US.UTF-8
+                export LC_ALL=en_US.UTF-8
+                /usr/local/bin/pod install
+                xcodebuild -workspace mrporter.xcworkspace -scheme mrporter PROVISIONING_PROFILE="e7d93e38-cc54-49ee-b06f-2475c07caf0a" CODE_SIGN_IDENTITY="Apple Distribution: Mighty Jaxx International Pte Ltd (YDSPR69YGX)" CODE_SIGN_STYLE="Manual" -sdk iphoneos -configuration Release archive -archivePath builds/xcarchive/mrporter.xcarchive
+                xcrun xcodebuild -exportArchive -exportOptionsPlist ExportOptions.plist -archivePath builds/xcarchive/mrporter.xcarchive -exportPath builds/ipa/
+                '''
+
+                script {
+                    // inline
+                    VERSION_NAME = sh script: 'cd mj-mobile-ios-build/ios && xcodebuild -showBuildSettings | grep MARKETING_VERSION | tr -d \'MARKETING_VERSION =\'', returnStdout: true
+                    echo "Version Name: ${VERSION_NAME}"
+                }
+    	   }
+        }
+        stage('upload to TF'){
+            when {
+                expression {
+                    !skipRemainingStages
+                }
+            }
+            steps {
+                sh '''
+                cd mj-mobile-ios-build/ios
+                xcrun altool --upload-app --type ios --file builds/ipa/Mighty\\ Jaxx\\ App.ipa --username "dovuthanh@gmail.com" --password "krgl-dbbt-iiog-tclz"
+                '''
+            }
+        }
+    }
+
+    post {
+        /**
+        * Update status to GitLab after run CI
+        * Send email notification
+        */
+        success {
+            script {
+                if(!skipRemainingStages){
+                    slackSend color: 'good', message: "*Type:* iOS\n*App:* MJ Mobile app\n*Version:* ${VERSION_NAME}\n*Build Number:* ${VERSION_CODE}\n*Build Id:* ${BUILD_NUMBER}\n*Download*: Please get it from TF"
+                }
+            }
+        }
+
+        failure {
+            script {
+                if(!skipRemainingStages){
+                    slackSend color: 'danger', message: "iOS build: ${BUILD_NUMBER} failured"
+                }
+            }
+        }
+    }
+}
